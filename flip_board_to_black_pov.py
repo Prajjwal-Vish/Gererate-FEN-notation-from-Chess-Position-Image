@@ -1,33 +1,106 @@
 import chess
 
-def reverse_rank(rank_str):
-    """Reverse files in a single rank string (mirrors horizontally)."""
-    tokens = []
-    i = 0
-    while i < len(rank_str):
-        if rank_str[i].isdigit():
-            tokens.append(rank_str[i])
-            i += 1
-        else:
-            tokens.append(rank_str[i])
-            i += 1
-    return ''.join(tokens[::-1])
+# This dictionary maps your *exact* folder names to FEN characters.
+# This is CRITICAL. '1' represents any empty square.
+FEN_MAP = {
+    'dark_rook': 'r',
+    'dark_knight': 'n',
+    'dark_bishop': 'b',
+    'dark_queen': 'q',
+    'dark_king': 'k',
+    'dark_pawn': 'p',
+    'light_rook': 'R',
+    'light_knight': 'N',
+    'light_bishop': 'B',
+    'light_queen': 'Q',
+    'light_king': 'K',
+    'light_pawn': 'P',
+    'empty_dark': '1',  # <-- Both empty types map to '1'
+    'empty_light': '1'  # <-- Both empty types map to '1'
+}
 
-def black_perspective_fen(fen_str):
-    """Full 180° rotation: reverse ranks + reverse files per rank."""
-    board = chess.Board(fen_str)
-    position = board.fen().split(' ')[0]
+def assemble_fen_from_predictions(predictions: list) -> str:
+    """
+    Converts a list of 64 predicted class names into a FEN *position string*.
+    ASSUMES the list is in the correct FEN order (Rank 8 -> Rank 1).
+    """
+    fen_ranks = []
+    for i in range(0, 64, 8):
+        rank_predictions = predictions[i : i+8]
+        fen_rank = ""
+        empty_count = 0
+        for pred_name in rank_predictions:
+            # Get FEN char, or '?' if not found (for debugging)
+            fen_char = FEN_MAP.get(pred_name, '?') 
+            
+            if fen_char == '1':
+                # It's an empty square, increment the counter
+                empty_count += 1
+            else:
+                # It's a piece.
+                # First, if we have a count of empty squares, add it.
+                if empty_count > 0:
+                    fen_rank += str(empty_count)
+                    empty_count = 0
+                # Now, add the piece character
+                fen_rank += fen_char
+        
+        # After finishing a rank, add any remaining empty_count
+        if empty_count > 0:
+            fen_rank += str(empty_count)
+            
+        fen_ranks.append(fen_rank)
+        
+    # Return *only* the position part of the FEN
+    return "/".join(fen_ranks)
+
+def reverse_rank(rank_str: str) -> str:
+    """Reverse files in a single rank string (mirrors horizontally)."""
+    # Use python-chess to expand (e.g., '8' -> '11111111')
+    expanded = ""
+    for char in rank_str:
+        if char.isdigit():
+            expanded += '1' * int(char)
+        else:
+            expanded += char
+    # Reverse the expanded string and then re-compress
+    reversed_expanded = expanded[::-1]
+    
+    # Re-compress
+    new_rank_str = ""
+    empty_count = 0
+    for char in reversed_expanded:
+        if char == '1':
+            empty_count += 1
+        else:
+            if empty_count > 0:
+                new_rank_str += str(empty_count)
+                empty_count = 0
+            new_rank_str += char
+    if empty_count > 0:
+        new_rank_str += str(empty_count)
+        
+    return new_rank_str
+
+def black_perspective_fen(position_string: str) -> str:
+    """
+    Performs a full 180-degree flip on a FEN position string
+    by reversing ranks (vertical) and reversing files (horizontal).
+    """
+    # Normalize the FEN string first (e.g., 111p4 -> 3p4)
+    try:
+        board = chess.Board(position_string + " w KQkq - 0 1")
+        position = board.fen().split(' ')[0] 
+    except Exception:
+        # Fallback if python-chess fails (e.g., on '?' chars)
+        position = position_string
+
     ranks = position.split('/')
+    
     # Vertical flip: reverse rank order
-    ranks = ranks[::-1]
+    ranks = ranks[::-1] 
+    
     # Horizontal flip: reverse files in each
     reversed_ranks = [reverse_rank(r) for r in ranks]
-    new_position = '/'.join(reversed_ranks)
-    # Keep rest of FEN unchanged
-    rest = ' '.join(board.fen().split(' ')[1:])
-    return new_position + ' ' + rest
-
-# Example
-original = "6R1/rPP3bP/3K2N1/6q1/1Q1Pp3/1p1p4/2p3pp/3k1b1r w - - 0 1"
-fixed = black_perspective_fen(original)
-print(fixed)  # r1b1k3/pp3p2/4p1p1/3pP1Q1/1q6/1N2K3/Pb3PPr/1R6 w - - 0 1
+    
+    return '/'.join(reversed_ranks)
