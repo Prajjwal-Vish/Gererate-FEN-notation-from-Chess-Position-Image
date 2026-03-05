@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SnapFen - Instant Chess Analysis</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>html { scroll-behavior: smooth; }</style>
+</head>
+<body class="flex flex-col text-base text-gray-200 relative pt-24 bg-slate-900">
+
+    <nav class="fixed top-0 w-full z-50 glass-nav px-4 md:px-8 flex items-center justify-between h-[90px]">
+        <div class="flex items-center gap-3 z-20 md:absolute md:left-1/2 md:transform md:-translate-x-1/2">
+            <h1 class="text-3xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 leading-tight whitespace-nowrap transition-all duration-300">
+                <i class="fa-solid fa-chess-knight mr-2"></i>SnapFen
+            </h1>
+        </div>
+        <div class="flex items-center gap-2 md:gap-4 ml-auto z-20 relative bg-[#0f172a]/50 md:bg-transparent rounded-xl p-1 md:p-0 backdrop-blur-sm md:backdrop-filter-none">
+            {% if user.is_authenticated %}
+                <button id="btn-history" class="flex items-center gap-2 text-gray-300 hover:text-white transition px-2 py-2 md:px-3 md:py-1.5 rounded-lg hover:bg-white/10">
+                    <i class="fa-solid fa-clock-rotate-left text-xl md:text-lg"></i>
+                    <span class="hidden md:inline font-bold text-sm">History</span>
+                </button>
+            {% else %}
+                <button onclick="window.location.href='/login'" class="flex items-center gap-2 text-gray-600 hover:text-gray-400 transition px-2 py-2 md:px-3 md:py-1.5 rounded-lg cursor-pointer" title="Log in to view history">
+                    <i class="fa-solid fa-clock-rotate-left text-xl md:text-lg"></i>
+                    <span class="hidden md:inline font-bold text-sm">History</span>
+                </button>
+            {% endif %}
+
+            {% if user.is_authenticated %}
+                <div class="h-6 w-px bg-white/20 mx-1"></div>
+                <span class="text-xs md:text-sm text-gray-400 font-mono max-w-[80px] md:max-w-xs truncate block">{{ user.username }}</span>
+                <a href="/logout" class="bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 md:px-4 md:py-1.5 rounded-lg text-xs md:text-sm font-bold hover:bg-red-500/20 transition whitespace-nowrap">Logout</a>
+            {% else %}
+                <div class="h-6 w-px bg-white/5 mx-1"></div>
+                <button onclick="window.location.href='/login'" class="text-gray-300 hover:text-white font-bold text-sm transition mr-2">Log In</button>
+                <a href="/signup" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-blue-500/20 transition text-sm">Sign Up</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div id="history-drawer" class="fixed top-0 right-0 h-full w-80 bg-[#1a1c2c] border-l border-white/10 z-[60] closed shadow-2xl flex flex-col pt-24 px-4 pb-4 backdrop-blur-xl">
+        <div class="flex justify-between items-center mb-4 pb-3 border-b border-white/10">
+            <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-purple-400"></i>Recent Scans</h3>
+            <button id="btn-close-history" class="text-gray-400 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <div id="history-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div class="flex flex-col items-center justify-center h-32 text-gray-500 gap-2">
+                <div class="loader w-6 h-6 border-2"></div>
+                <span class="text-xs">Loading history...</span>
+            </div>
+        </div>
+    </div>
+    <div id="drawer-backdrop" class="fixed inset-0 bg-black/60 z-[55] hidden backdrop-blur-sm transition-opacity"></div>
+
+    <button id="btn-open-feedback" class="fixed bottom-6 right-6 z-40 w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full shadow-xl shadow-blue-500/40 flex items-center justify-center transition-all hover:scale-110 group border border-white/20">
+        <i class="fa-solid fa-question text-2xl"></i>
+    </button>
+
+    <main class="w-full min-h-[calc(100vh-6rem)] flex flex-col md:flex-row animate-fade-in relative z-10">
+        
+        <div class="w-full md:w-1/2 p-6 md:p-8 lg:p-12 flex flex-col border-b md:border-b-0 md:border-r border-white/10 justify-start pt-12 md:pt-16">
+            <div class="mb-6 text-center">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-200 leading-snug">
+                    Upload a screenshot.<span class="text-blue-400 block sm:inline"> We'll handle the rest.</span>
+                </h2>
+            </div>
+
+            <div id="drop-zone" class="w-full min-h-[50vh] flex flex-col justify-center items-center border-4 border-dashed border-white/20 rounded-3xl bg-white/5 hover:bg-white/10 transition-all cursor-pointer relative group mt-2">
+                <input type="file" id="file-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                <div class="text-center space-y-4 pointer-events-none">
+                    <div class="w-20 h-20 mx-auto rounded-full bg-blue-500/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl text-blue-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-200">Drag & drop or click</p>
+                        <p class="text-base text-gray-500 mt-1">Supports PNG, JPG, JPEG</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="preview-container" class="hidden w-full max-w-3xl mx-auto flex flex-col mt-4">
+                
+                <div class="w-full relative rounded-2xl overflow-hidden border border-white/20 bg-black/40 flex items-center justify-center p-2 min-h-[50vh]">
+                    <div id="image-wrapper" class="w-full h-full flex justify-center">
+                        <img id="main-preview" src="" class="max-w-full max-h-[60vh] object-contain shadow-xl rounded-lg block">
+                    </div>
+                </div>
+                
+                <div id="action-buttons" class="grid grid-cols-3 gap-4 mt-6">
+                    <button id="btn-new-image" class="py-4 px-6 bg-emerald-600 hover:bg-emerald-500 text-white text-lg rounded-xl font-bold transition shadow-lg border border-white/10 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-plus"></i><span>New</span>
+                    </button>
+                    <button id="btn-crop-toggle" class="py-4 px-6 bg-gray-800 hover:bg-gray-700 text-white text-lg rounded-xl font-bold transition shadow-lg border border-white/10 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-crop-simple"></i><span>Crop</span>
+                    </button>
+                    <button id="btn-quick-scan" class="py-4 px-6 bg-blue-600 hover:bg-blue-500 text-white text-lg rounded-xl font-bold transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-bolt"></i><span>Scan</span>
+                    </button>
+                </div>
+
+                <div id="crop-buttons" class="hidden grid grid-cols-2 gap-4 mt-6">
+                    <button id="btn-cancel-crop" class="py-4 px-6 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-lg rounded-xl font-bold transition border border-red-500/30 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-xmark"></i><span>Cancel</span>
+                    </button>
+                    <button id="btn-confirm-crop" class="py-4 px-6 bg-green-600 hover:bg-green-500 text-white text-lg rounded-xl font-bold transition shadow-lg shadow-green-500/20 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i><span>Apply Crop</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full md:w-1/2 bg-black/20 backdrop-blur-sm p-6 md:p-8 lg:p-12 flex flex-col relative justify-start pt-12 md:pt-16">
+            <div class="mb-8 p-6 bg-white/5 rounded-2xl border border-white/10">
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders"></i> Board Configuration
+                </h3>
+                <div class="flex flex-col xl:flex-row gap-6 justify-between">
+                    <div class="flex items-center justify-between gap-3 w-full">
+                        <span class="text-gray-300 font-bold text-lg">Black's View?</span>
+                        <label class="relative inline-flex items-center cursor-pointer group">
+                            <input type="checkbox" id="pov-toggle" class="sr-only peer">
+                            <div class="w-14 h-8 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600 transition-colors"></div>
+                        </label>
+                    </div>
+                    <div class="hidden xl:block w-px bg-white/10"></div>
+                    <div class="xl:hidden h-px w-full bg-white/10"></div>
+                    <div class="flex items-center justify-between gap-3 w-full">
+                        <span class="text-gray-300 font-bold text-lg">Side to Move</span>
+                        <label class="relative inline-flex items-center cursor-pointer group">
+                            <input type="checkbox" id="turn-toggle" class="sr-only peer">
+                            <div class="w-14 h-8 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-indigo-600 transition-colors"></div>
+                            <span id="turn-label" class="ml-3 text-sm font-bold text-white w-12 text-center">White</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="empty-result-state" class="flex-1 flex flex-col items-center justify-center text-gray-500 min-h-[300px]">
+                <div class="w-32 h-32 rounded-full bg-white/5 flex items-center justify-center mb-6 animate-pulse">
+                    <i class="fa-solid fa-chess-board text-7xl opacity-30"></i>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-400 text-center">Ready to Analyze</h3>
+                <p class="text-base opacity-60 mt-2 text-center max-w-xs">Configure options & upload.</p>
+            </div>
+
+            <div id="result-content" class="hidden space-y-8">
+                <div class="inline-flex items-center gap-4 px-6 py-3 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                    <div class="w-3 h-3 rounded-full bg-green-400 animate-pulse"></div>
+                    <span class="text-sm font-bold uppercase tracking-wider">Analysis Complete</span>
+                </div>
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-blue-400 uppercase tracking-widest">Generated FEN</label>
+                    <div class="flex group">
+                        <input type="text" id="fen-text" readonly class="flex-1 p-6 bg-gray-900/80 border border-gray-700 border-r-0 rounded-l-2xl font-mono text-xl text-blue-300 focus:outline-none focus:border-blue-500 transition placeholder-gray-600" value="...">
+                        <button id="btn-copy" class="bg-gray-800 border border-gray-700 border-l-0 text-gray-300 px-8 rounded-r-2xl hover:bg-gray-700 hover:text-white transition active:bg-gray-600">
+                            <i class="fa-regular fa-copy text-2xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-6">
+                    <a id="link-lichess" href="#" target="_blank" class="group py-4 px-6 bg-[#252529] hover:bg-[#303036] border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition shadow-lg">
+                        <img src="https://lichess1.org/assets/logo/lichess-favicon-32.png" class="w-6 opacity-80 group-hover:opacity-100"><span class="text-lg font-bold text-gray-300 group-hover:text-white">Lichess</span>
+                    </a>
+                    <!-- CHESS.COM BUTTON (Fixed with Inline SVG) -->
+                    <a id="link-chesscom" href="#" target="_blank"
+                        class="group py-4 px-6 bg-[#312e2b] hover:bg-[#403d39] border border-white/10 
+                                rounded-2xl flex items-center justify-center gap-3 transition shadow-lg">
+
+                            <img src="https://www.chess.com/favicon.ico"
+                                class="w-6 h-6 object-contain opacity-80 group-hover:opacity-100" />
+
+                            <span class="text-lg font-bold text-gray-300 group-hover:text-white">Chess.com</span>
+                    </a>
+                </div>
+                <div class="pt-8 border-t border-white/10 flex flex-col items-center">
+                    <p class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Verify Board Crop</p>
+                    <img id="analyzed-preview" src="" class="h-48 w-auto object-contain rounded-2xl border border-white/10 shadow-lg">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <section id="how-to-use" class="glass-section py-12 px-6 border-t border-white/10">
+        <div class="max-w-[110rem] mx-auto">
+             <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-white mb-3">How to Use</h2>
+                <p class="text-lg text-gray-400">Five simple steps to perfect analysis.</p>
+            </div>
+             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition group">
+                    <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 text-2xl mb-4 group-hover:scale-110 transition-transform"><i class="fa-solid fa-upload"></i></div>
+                    <h3 class="text-lg font-bold text-white mb-2">1. Upload</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">Upload a clear screenshot of your chessboard from any site or app.</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition group">
+                    <div class="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400 text-2xl mb-4 group-hover:scale-110 transition-transform"><i class="fa-solid fa-crop-simple"></i></div>
+                    <h3 class="text-lg font-bold text-white mb-2">2. Crop</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">Use the crop tool to remove UI elements. Mobile screenshots usually require manual cropping.</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-white/5 border-2 border-orange-500/20 hover:bg-white/10 transition relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">IMPORTANT</div>
+                    <div class="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 text-2xl mb-4 group-hover:scale-110 transition-transform"><i class="fa-solid fa-toggle-on"></i></div>
+                    <h3 class="text-lg font-bold text-white mb-2">3. Perspective</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">Playing as <strong>Black</strong>? Toggle the switch. We assume White is at the bottom by default.</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition group">
+                    <div class="w-12 h-12 rounded-xl bg-pink-500/20 flex items-center justify-center text-pink-400 text-2xl mb-4 group-hover:scale-110 transition-transform"><i class="fa-solid fa-shuffle"></i></div>
+                    <h3 class="text-lg font-bold text-white mb-2">4. Whose Turn?</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">Set the <strong>Side to Move</strong> toggle. This ensures the analysis engine finds the correct next move.</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition group">
+                    <div class="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center text-green-400 text-2xl mb-4 group-hover:scale-110 transition-transform"><i class="fa-solid fa-chess"></i></div>
+                    <h3 class="text-lg font-bold text-white mb-2">5. Get FEN</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">Click <strong>Scan Board</strong>. The FEN is generated instantly for you to copy or analyze.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="bg-[#0b1120] border-t border-white/10 pt-12 pb-8 px-6 mt-auto">
+        <div class="max-w-7xl mx-auto">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 mb-12">
+                
+                <div class="space-y-4">
+                    <h4 class="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">SnapFen</h4>
+                    <p class="text-gray-400 text-sm leading-relaxed max-w-sm">Bridging the gap between physical boards and digital analysis. The fastest way to digitize your chess games.</p>
+                    <div class="pt-4">
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Connect with the Developer</p>
+                        <div class="flex gap-3">
+                            <a href="https://x.com/prajjwal_vish" class="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:bg-blue-400 hover:text-white hover:-translate-y-1 transition-all shadow-lg"><i class="fa-brands fa-twitter text-lg"></i></a>
+                            <a href="#" class="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:bg-pink-600 hover:text-white hover:-translate-y-1 transition-all shadow-lg"><i class="fa-brands fa-instagram text-lg"></i></a>
+                            <a href="https://www.linkedin.com/in/prajjwal-vishwakarma-1564b1230/" class="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:bg-blue-700 hover:text-white hover:-translate-y-1 transition-all shadow-lg"><i class="fa-brands fa-linkedin-in text-lg"></i></a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-6 lg:pl-10">
+                    <h5 class="text-sm font-extrabold text-white uppercase tracking-widest">Product</h5>
+                    <ul class="space-y-3 text-sm text-gray-400">
+                        <li><a href="#" id="footer-upload-link" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">Upload Image</a></li>
+                        <li><a href="#how-to-use" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">How it Works</a></li>
+                        <li><a href="#" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">API Access</a></li>
+                    </ul>
+                </div>
+
+                <div class="space-y-6">
+                    <h5 class="text-sm font-extrabold text-white uppercase tracking-widest">Support</h5>
+                    <ul class="space-y-3 text-sm text-gray-400">
+                        <li><a href="#" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">Documentation</a></li>
+                        <li><a href="#" id="footer-report-bug" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">Report a Bug</a></li>
+                        <li><a href="#" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">Community</a></li>
+                        <li><a href="#" class="hover:text-blue-400 hover:pl-1 transition-all duration-300">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="pt-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-gray-600 text-xs">
+                <div class="flex items-center gap-2">
+                    <span>&copy; 2025 SnapFen. v1.2.0</span>
+                    <div class="h-1 w-1 bg-gray-600 rounded-full mx-2"></div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="relative flex h-2 w-2">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span class="text-gray-500 font-mono">All Systems Normal</span>
+                    </div>
+                </div>
+                <div class="flex gap-6">
+                    <a href="#" class="hover:text-gray-400 transition">Privacy Policy</a>
+                    <a href="#" class="hover:text-gray-400 transition">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <div id="feedback-modal" class="fixed inset-0 z-50 bg-black/90 hidden flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+        <div class="bg-[#1a1c2c] border border-white/10 rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col animate-slide-up">
+            <div class="p-6 border-b border-white/10 flex justify-between items-center bg-[#0f172a]">
+                <h3 class="text-2xl font-bold text-gray-200 flex items-center gap-3">
+                    <i class="fa-solid fa-message text-blue-400"></i> AI Feedback
+                </h3>
+                <button id="btn-close-feedback" class="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-gray-400 transition">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-8 space-y-6">
+                <p class="text-gray-400">Did the AI get it wrong? Highlight the issue so we can train it better.</p>
+                <div>
+                    <label class="block text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">What went wrong?</label>
+                    <div class="flex flex-wrap gap-3" id="feedback-tags">
+                        <button class="feedback-tag px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-blue-600 hover:text-white transition">Wrong Piece</button>
+                        <button class="feedback-tag px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-blue-600 hover:text-white transition">Wrong Color</button>
+                        <button class="feedback-tag px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-blue-600 hover:text-white transition">Bad Crop</button>
+                        <button class="feedback-tag px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-blue-600 hover:text-white transition">Other</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Details (Optional)</label>
+                    <textarea id="feedback-text" rows="3" class="w-full p-4 bg-black/30 border border-white/10 rounded-xl text-gray-300 focus:outline-none focus:border-blue-500 transition resize-none" placeholder="e.g. The pawn on E4 is actually a Bishop..."></textarea>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                    <i class="fa-solid fa-circle-info text-blue-400"></i>
+                    <span class="text-sm text-blue-300">We automatically attach the current board image.</span>
+                </div>
+            </div>
+            <div class="p-6 border-t border-white/10 bg-[#0f172a] flex justify-end">
+                <button id="btn-submit-feedback" class="py-3 px-8 bg-blue-600 hover:bg-blue-500 text-white text-lg rounded-xl font-bold transition shadow-lg flex items-center gap-2">
+                    <span>Send Report</span>
+                    <i class="fa-regular fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="bug-modal" class="hidden fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-[#1a1c2c] p-6 rounded-3xl w-full max-w-md border border-white/10">
+            <div class="flex justify-between mb-4">
+                <h3 class="text-xl font-bold text-white text-red-400"><i class="fa-solid fa-bug mr-2"></i>Report a Bug</h3>
+                <button id="btn-close-bug"><i class="fa-solid fa-xmark text-gray-400"></i></button>
+            </div>
+            
+            <p class="text-gray-400 text-xs mb-3">Describe the glitch or issue you encountered.</p>
+            
+            <textarea id="bug-text" rows="4" class="w-full bg-black/30 text-white rounded-xl p-3 mb-4 border border-white/10 focus:border-red-500 focus:outline-none transition text-sm" placeholder="I clicked upload and nothing happened..."></textarea>
+            
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Screenshot (Optional)</label>
+                <input type="file" id="bug-file" class="block w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20 transition cursor-pointer">
+            </div>
+
+            <button id="btn-submit-bug" class="w-full bg-red-600 hover:bg-red-500 text-white py-2 rounded-xl font-bold transition text-sm">Submit Bug Report</button>
+        </div>
+    </div>
+    <div id="error-toast" class="fixed top-24 right-6 z-[100] hidden transition-all duration-500 transform translate-x-full">
+        <!-- Glass Effect + Red Glow -->
+        <div class="bg-[#1a1c2c]/90 backdrop-blur-xl border-l-4 border-red-500 text-white p-6 rounded-r-2xl shadow-[0_0_20px_rgba(239,68,68,0.4)] flex items-start gap-5 max-w-md">
+            
+            <!-- Icon -->
+            <div class="text-red-500 text-3xl animate-pulse">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            
+            <!-- Content -->
+            <div>
+                <h4 class="font-bold text-xl mb-1 text-red-100 tracking-wide">Analysis Failed</h4>
+                <p id="error-message" class="text-sm text-gray-400 font-mono leading-relaxed">
+                    No chessboard detected.
+                </p>
+                <div class="mt-3">
+                    <button onclick="document.getElementById('btn-crop-toggle').click(); closeError();" class="text-xs font-bold bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1.5 rounded-lg transition uppercase tracking-wider">
+                        Try Manual Crop
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Close Button -->
+            <button onclick="closeError()" class="text-gray-500 hover:text-white transition">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=1.4"></script>
+</body>
+
+</html>
