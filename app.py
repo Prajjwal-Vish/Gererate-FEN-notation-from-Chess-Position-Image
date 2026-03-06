@@ -321,15 +321,28 @@ import os
 from dotenv import load_dotenv
 
 # --- SMART IMPORT BLOCK ---
+# try:
+#     import tflite_runtime.interpreter as tflite
+#     print("--- Using TFLite Runtime (Lightweight) ---")
+# except ImportError:
+#     try:
+#         import tensorflow.lite as tflite
+#         print("--- Using Full TensorFlow Lite (Local Fallback) ---")
+#     except ImportError:
+#         print("CRITICAL ERROR: 'tflite_runtime' not found.")
+
+# --- SMART IMPORT BLOCK (CRITICAL FOR VERCEL) ---
 try:
-    import tflite_runtime.interpreter as tflite
-    print("--- Using TFLite Runtime (Lightweight) ---")
+    # 1. Try Modern Lightweight Runtime (For Vercel/Linux)
+    import ai_edge_litert.interpreter as tflite
+    print("--- Using AI Edge LiteRT (Lightweight) ---")
 except ImportError:
+    # 2. Fallback to Full TensorFlow (For Local Dev)
     try:
         import tensorflow.lite as tflite
         print("--- Using Full TensorFlow Lite (Local Fallback) ---")
     except ImportError:
-        print("CRITICAL ERROR: 'tflite_runtime' not found.")
+        print("CRITICAL ERROR: 'ai_edge_litert' not found. Ensure it is in requirements.txt")
 
 load_dotenv()
 
